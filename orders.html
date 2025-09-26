@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <title>Bestellingen Overzicht</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root {
+      --accent:#6dd3ff;
+      --dark:#0f1724;
+      --muted:#94a3b8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+      margin: 0;
+      background: linear-gradient(180deg,#071024 0%, #071827 100%);
+      color: #e6eef6;
+      padding: 28px;
+    }
+    h1 { color: var(--accent); text-align:center; margin-bottom:18px; }
+
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .order {
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.12));
+      border: 1px solid rgba(255,255,255,0.05);
+      padding: 16px;
+      margin: 12px 0;
+      border-radius: 12px;
+      color: #e6eef6;
+    }
+    .order strong { color: var(--accent); display:block; margin-bottom:6px; }
+    .order ul { margin: 8px 0 0 20px; padding:0; color:var(--muted); }
+    .meta { color: var(--muted); margin-top:6px; }
+
+    .status { font-weight:700; }
+    .status.In\ afwachting { color: orange; }
+    .status.Goedgekeurd { color: lightgreen; }
+    .status.Geweigerd { color: #ff6b6b; }
+
+    .controls { margin-top: 10px; }
+    button {
+      cursor:pointer;
+      padding:8px 12px;
+      border-radius:8px;
+      border:0;
+      margin-right:8px;
+      font-weight:600;
+    }
+    button.approve { background: lightgreen; color:#042233; }
+    button.reject { background: #ff6b6b; color:#fff; }
+    button.delete { background: var(--accent); color:#042233; }
+
+    footer {
+      margin-top:28px;
+      text-align:center;
+      color:var(--muted);
+      font-size:14px;
+    }
+
+    /* Password modal (custom) */
+    .modal-backdrop {
+      display:none;
+      position: fixed;
+      inset:0;
+      background: rgba(0,0,0,0.6);
+      z-index: 1000;
+      align-items:center;
+      justify-content:center;
+      padding: 20px;
+    }
+    .modal-backdrop.show { display:flex; }
+
+    .modal-box {
+      background: linear-gradient(180deg,#061422,#041826);
+      border-radius:12px;
+      padding:20px;
+      width:100%;
+      max-width:420px;
+      color:#e6eef6;
+      box-shadow: 0 12px 40px rgba(2,6,23,0.6);
+      border:1px solid rgba(255,255,255,0.04);
+    }
+    .modal-box h2 { margin:0 0 12px; color:var(--accent); }
+    .modal-box p { margin:0 0 12px; color:var(--muted); }
+    .modal-box input[type="password"] {
+      width:100%;
+      padding:10px;
+      border-radius:8px;
+      border:1px solid rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.02);
+      color:#fff;
+      margin-bottom:12px;
+      outline: none;
+    }
+    .modal-actions { display:flex; gap:10px; justify-content:flex-end; }
+    .btn-ghost {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid rgba(255,255,255,0.04);
+      padding:8px 12px;
+      border-radius:8px;
+      cursor:pointer;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color:#042233;
+      padding:8px 12px;
+      border-radius:8px;
+      border:0;
+      cursor:pointer;
+      font-weight:600;
+    }
+
+    .error {
+      color:#ffb3b3;
+      margin-top:8px;
+      font-size:14px;
+    }
+
+    @media (max-width:520px){
+      .modal-box { padding:14px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📦 Bestellingen</h1>
+    <div id="ordersList">Laden...</div>
+    <footer>© 2025 BOSZ Shop — Beheeromgeving</footer>
+  </div>
+
+  <!-- Custom password modal -->
+  <div id="pwModal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="pwTitle">
+    <div class="modal-box">
+      <h2 id="pwTitle">Voer wachtwoord in</h2>
+      <p>Voer het beheerderswachtwoord in om deze pagina te bekijken.</p>
+      <input id="pwInput" type="password" placeholder="Wachtwoord" autocomplete="current-password" />
+      <div class="error" id="pwError" style="display:none"></div>
+      <div class="modal-actions">
+        <button class="btn-ghost" id="pwCancel">Annuleren</button>
+        <button class="btn-primary" id="pwSubmit">Inloggen</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Config
+    const wachtwoord = "geheim123";
+    const webhookUrl = "https://discord.com/api/webhooks/1419409401353339062/5BKkXdhDzHTzHZ4ylJWpSSWGg-Dhl-Sk5Mrh_Pd0w1tyzlgEUcICtBywzdGUyohocNlu";
+
+    // Elements
+    const ordersListEl = document.getElementById('ordersList');
+    const pwModal = document.getElementById('pwModal');
+    const pwInput = document.getElementById('pwInput');
+    const pwError = document.getElementById('pwError');
+    const pwSubmit = document.getElementById('pwSubmit');
+    const pwCancel = document.getElementById('pwCancel');
+
+    // Show modal on load instead of native prompt
+    window.addEventListener('DOMContentLoaded', () => {
+      showPasswordModal();
+      // allow Enter to submit
+      pwInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') tryLogin();
+      });
+      pwSubmit.addEventListener('click', tryLogin);
+      pwCancel.addEventListener('click', () => {
+        // user cancelled: hide modal and show access denied message
+        hidePasswordModal();
+        document.body.innerHTML = '<div style="padding:28px;color:var(--muted);"><h1>Toegang geweigerd</h1><p>Je hebt de toegang geannuleerd.</p></div>';
+      });
+    });
+
+    function showPasswordModal() {
+      pwError.style.display = 'none';
+      pwInput.value = '';
+      pwModal.classList.add('show');
+      setTimeout(() => pwInput.focus(), 200);
+    }
+    function hidePasswordModal() {
+      pwModal.classList.remove('show');
+    }
+
+    function tryLogin() {
+      const val = pwInput.value || '';
+      if (val === wachtwoord) {
+        hidePasswordModal();
+        loadOrders(); // nu pas orders laden
+      } else {
+        pwError.style.display = 'block';
+        pwError.textContent = 'Onjuist wachtwoord. Probeer het opnieuw.';
+        pwInput.classList.add('shake');
+        setTimeout(() => pwInput.classList.remove('shake'), 300);
+        pwInput.focus();
+      }
+    }
+
+    /* ===== Orders logic (zelfde als eerder, met id-fix en directe delete) ===== */
+    function loadOrders() {
+      let orders = JSON.parse(localStorage.getItem("orders")) || [];
+      let changed = false;
+
+      // Ensure every order has id + status
+      orders.forEach((order, index) => {
+        if (!order.id) {
+          order.id = Date.now() + index;
+          changed = true;
+        }
+        if (!order.status) {
+          order.status = "In afwachting";
+          changed = true;
+        }
+      });
+      if (changed) localStorage.setItem("orders", JSON.stringify(orders));
+
+      if (orders.length === 0) {
+        ordersListEl.innerHTML = '<p style="color:var(--muted)">Geen bestellingen gevonden.</p>';
+        return;
+      }
+
+      let html = '';
+      orders.forEach((order, index) => {
+        const items = order.cart || order.items || [];
+        const productsHtml = items.map(item => {
+          const productName = item.name || item.product || item.title || "Onbekend product";
+          const qty = item.qty || 1;
+          const price = item.price || 0;
+          return `<li>${qty}× ${productName} - €${(price * qty).toFixed(2)}</li>`;
+        }).join('');
+
+        const total = items.reduce((s,i) => s + ((i.price||0)*(i.qty||1)), 0);
+        html += `
+          <div class="order">
+            <strong>Bestelling ${index + 1}</strong>
+            <div class="meta">Naam: ${order.name || 'Onbekend'} • Email: ${order.email || 'Onbekend'} • Datum: ${order.date || 'Onbekend'}</div>
+            <div style="margin-top:8px">Status: <span class="status ${order.status}">${order.status}</span></div>
+            <div style="margin-top:8px">
+              <div>Producten:</div>
+              <ul>${productsHtml}</ul>
+              <p><strong>Totaal:</strong> €${total.toFixed(2)}</p>
+            </div>
+            <div class="controls">
+              <button class="approve" onclick="updateStatus(${order.id}, 'Goedgekeurd')">✅ Goedkeuren</button>
+              <button class="reject" onclick="updateStatus(${order.id}, 'Geweigerd')">❌ Weigeren</button>
+              <button class="delete" onclick="deleteOrder(${order.id})">🗑️ Verwijderen</button>
+            </div>
+          </div>
+        `;
+      });
+
+      ordersListEl.innerHTML = html;
+    }
+
+    function updateStatus(orderId, newStatus) {
+      let orders = JSON.parse(localStorage.getItem("orders")) || [];
+      const order = orders.find(o => o.id === orderId);
+      if (!order) return;
+      order.status = newStatus;
+      localStorage.setItem("orders", JSON.stringify(orders));
+      if (newStatus === "Goedgekeurd") sendDiscordWebhook(order);
+      loadOrders();
+    }
+
+    // Direct delete (no confirm)
+    function deleteOrder(orderId) {
+      let orders = JSON.parse(localStorage.getItem("orders")) || [];
+      orders = orders.filter(o => o.id !== orderId);
+      localStorage.setItem("orders", JSON.stringify(orders));
+      loadOrders();
+    }
+
+    function sendDiscordWebhook(order) {
+      const items = order.cart || order.items || [];
+      const totaal = items.reduce((s,i) => s + ((i.price||0)*(i.qty||1)), 0);
+      const productList = items.map(i => `**${(i.qty||1)}x ${i.name||i.title||i.product||'Onbekend'}**`).join(", ");
+      const message = `Bedankt **${order.name||'Klant'}** voor het kopen van ${productList} voor een totaal van **€${totaal.toFixed(2)}**!`;
+
+      const payload = { embeds: [{ title: "Nieuwe donatie! 🎉", description: message, color: 5763719 }] };
+      // fire-and-forget
+      fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type":"application/json" },
+        body: JSON.stringify(payload)
+      }).then(r => console.log("Webhook status:", r.status)).catch(e => console.error(e));
+    }
+  </script>
+</body>
+</html>
